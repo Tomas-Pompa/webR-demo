@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GAMU</title>
+    <style>
+    /* Background and fonts */
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f5fbff; /* light blue */
+      color: #010408;            /* dark blue text */
+      margin: 0;
+      padding: 20px 20px 20px 220px; /* add left padding for sticky ToC */
+    }
+
+    /* Header styles */
+    h1 {
+      color: #0d47a1;            /* dark blue */
+      background-color: #bbdefb; /* medium blue */
+      padding: 10px;
+      border-radius: 8px;
+    }
+
+    h2 {
+      color: #1565c0; /* another shade of blue */
+    }
+
+    p {
+      font-size: 16px;
+      font-family: Arial, sans-serif;
+      color: #040e1e;
+    }
+
+    /* Styling the webR state box */
+    #webR-state {
+      color: red;                /* make text red */
+      font-weight: bold;
+    }
+
+    pre {
+      background-color: #dcf2fc; /* very light blue */
+      border: 1px solid #84c4f9; /* medium blue border */
+      padding: 10px;
+      border-radius: 5px;
+    }
+
+    /* Container margin */
+    div {
+      margin-top: 20px;
+    }
+
+    /* Sticky Table of Contents */
+    .toc {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      width: 175px;
+      background-color: #bbdefb;
+      padding: 5px;
+      border-radius: 5px;
+      font-size: 12px;
+    }
+    .toc h3 {
+      margin-top: 0;
+      font-size: 16px;
+      color: #0d47a1;
+    }
+    .toc ul {
+      list-style-type: none;
+      padding-left: 10px;
+    }
+    .toc li {
+      margin-bottom: 5px;
+    }
+    .toc a {
+      color: #0d47a1;
+      text-decoration: none;
+    }
+    .toc a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <!-- Sticky Table of Contents -->
+  <div class="toc">
+    <h3>Table of Contents</h3>
+    <ul>
+      <li><a href="#data">1. Data set</a></li>
+      <li><a href="#gen">1.1 Generate data</a></li>
+      <li><a href="#plot">1.2 Plot data</a></li>
+      <li><a href="#lm">1.3 Fit model</a></li>
+      <li><a href="#fitplot">1.4 Plot fitted lines</a></li>
+      <li><a href="#datafromfile">2. Load data from a file</a></li>
+      <li><a href="#loaddata">2.1 Load the data</a></li>
+      <li><a href="#plot2">2.2 Plot data</a></li>
+      <li><a href="#lm2">2.3 Fit model</a></li>
+      <li><a href="#fitplot2">2.4 Plot fitted lines</a></li>
+    </ul>
+  </div>
+
+  <!-- Header of the HTML document -->
+  <h1><b>GAMU</b>: Presentation of <code>webR</code> functionalities</h1>
+  <h2>How could our app look like</h2>
+  <p><b>Tomas Pompa</b></p>
+  <p>September 2025</p>
+  <!-- Row with current state of the webR -->
+  <div>
+      <pre><code id="webR-state">Loading webR, please wait...</code></pre>
+  </div>
+
+  <!-- script with webR code -->
+  <script type="module">
+    // initialize webR
+    import { WebR } from "https://webr.r-wasm.org/latest/webr.mjs";
+    const webR = new WebR();
+    await webR.init();
+
+    // Load packages and display current webR state
+    const outElem = document.getElementById('webR-state');
+    outElem.innerText = 'Loading packages, please wait...';
+    await webR.installPackages(['dplyr', 'ggplot2'], true);
+    const outElem2 = document.getElementById('webR-state');
+    outElem2.innerText = 'Everything is ready!';
+
+    // Define custom functions
+    await webR.evalR(`
+      # This cell contains definition of the functions used in this document
+      GenerateData <- function(N) {
+        data <- data.frame(Size = runif(N, 1, 18),
+                        Type = sample(c("Class A", "Class B"), N, replace = TRUE))
+        data$Width = 1 + 0.8 * data$Size + rnorm(N, sd = 2)
+        return(data)
+      }
+
+      FitLM <- function(data) {
+        model <- lm(Width ~ Size * Type, data = data)
+        p <- ggplot(data = data, aes(x = Size, y = Width, color = Type)) + 
+          geom_point() + 
+          theme_bw() + 
+          geom_smooth(method = "lm", se = FALSE)
+        print(p)
+      }   
+    `);
+
+    // 1.1 Generate data with specified N
+    window.generateData = async function() { // define a function
+      const N_data = parseInt(document.getElementById("N_data").value) || 100; // load the specified N
+      // Generate the data
+      await webR.evalR(`
+        # Generate the data
+        data <- GenerateData(${N_data})
+      `); 
+      // Dimension of the data
+      const nrow_data = await webR.evalR(`nrow(data)`);
+      const ncol_data = await webR.evalR(`ncol(data)`);
+      const colnames_data = await webR.evalR(`colnames(data)`);
+      // Convert dimensions to array
+      const output_nrow_data = (await nrow_data.toArray())[0];
+      const output_ncol_data = (await ncol_data.toArray())[0];
+      const output_colnames_data = await colnames_data.toArray();
+      // Specify text for the data elements
+      document.getElementById("output_nrow_data").textContent = "Number of rows: " + output_nrow_data;
+      document.getElementById("output_ncol_data").textContent = "Number of columns: " + output_ncol_data;
+      document.getElementById("output_colnames_data").textContent = "Column names: " + output_colnames_data.join(", ");
+    }
+
+    // 1.2 Plot the data
+    window.plotMyData = async function() {
+      const graph_title = document.getElementById("graph_title").value || "My Plot";
+
+      const outElem3 = document.getElementById('plot-text');
+      outElem3.innerText = 'Plotting the graph, please wait ...';
+    
+      await webR.evalRVoid(`
+          library(ggplot2)
+          webr::canvas(width=400, height=300)
+          
+          p1 <- ggplot(data = data, aes(x = Size, y = Width, color = Type)) + 
+            geom_point() + 
+            theme_bw() + 
+            ggtitle(label = as.character(${graph_title}))
+          
+          print(p1)
+          dev.off()
+      `);
+
+      const outElem4 = document.getElementById('plot-text');
+      outElem4.innerText = 'Your graph is ready!';
+
+      const msgs = await webR.flush();
+      msgs.forEach(msg => {
+        if (msg.type === 'canvas' && msg.data.event === 'canvasImage') {
+          const canvas = document.getElementById('my_plot_1');
+          canvas.getContext('2d').drawImage(msg.data.image, 0, 0);
+        }
+      });
+    }
+
+    // 1.3 Fitting linear model
+    window.FitLM = async function() {
+      const outElem5 = document.getElementById('fit-LM');
+      outElem5.innerText = 'Fitting the linear model, please wait ...';
+
+      await webR.evalR(`
+          model <- lm(Width ~ Size * Type, data = data)
+      `);
+
+      // regression coefficients
+      const beta0 = await webR.evalR(`coef(model)[1]`);
+      const beta1 = await webR.evalR(`coef(model)[2]`);
+      const beta2 = await webR.evalR(`coef(model)[3]`);
+      const beta3 = await webR.evalR(`coef(model)[4]`);
+      // Convert parameters to array
+      const output_beta0 = (await beta0.toArray())[0];
+      const output_beta1 = (await beta1.toArray())[0];
+      const output_beta2 = (await beta2.toArray())[0];
+      const output_beta3 = (await beta3.toArray())[0];
+      // Specify text for the parameters
+      document.getElementById("output_beta0").textContent = "Intercept: " + output_beta0;
+      document.getElementById("output_beta1").textContent = "Coefficient for Size: " + output_beta1;
+      document.getElementById("output_beta2").textContent = "Coefficient for Type B: " + output_beta2;
+      document.getElementById("output_beta3").textContent = "Interaction coefficient: " + output_beta3;
+
+      const outElem6 = document.getElementById('fit-LM');
+      outElem6.innerText = 'The model has been fitted!';
+    }
+
+    // 1.4 Plot the fitted lines
+    window.plotFittedCurves = async function() {
+      const graph_title2 = document.getElementById("graph_title2").value || "My Plot";
+
+      const outElem7 = document.getElementById('plot-text2');
+      outElem7.innerText = 'Plotting the graph, please wait ...';
+    
+      await webR.evalRVoid(`
+          library(ggplot2)
+          webr::canvas(width=400, height=300)
+          
+          p2 <- ggplot(data = data, aes(x = Size, y = Width, color = Type)) + 
+            geom_point() + 
+            theme_bw() + 
+            geom_smooth(method = "lm", se = FALSE) +
+            ggtitle(label = as.character(${graph_title2}))
+          
+          print(p2)
+          dev.off()
+      `);
+
+      const outElem8 = document.getElementById('plot-text2');
+      outElem8.innerText = 'Your graph is ready!';
+
+      const msgs = await webR.flush();
+      msgs.forEach(msg => {
+        if (msg.type === 'canvas' && msg.data.event === 'canvasImage') {
+          const canvas = document.getElementById('my_plot_2');
+          canvas.getContext('2d').drawImage(msg.data.image, 0, 0);
+        }
+      });
+    }
+
+    // 2.1 Load the data
+    const fileInput = document.getElementById('csvFile');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const statusEl = document.getElementById('status');
+
+    uploadBtn.addEventListener('click', async () => {
+      try {
+        if (!fileInput.files || fileInput.files.length === 0) {
+          statusEl.textContent = 'Please select a CSV file first.';
+          return;
+        }
+
+        const file = fileInput.files[0];
+        if (!file || file.size === 0) {
+          statusEl.textContent = 'Selected file is empty. Choose a non-empty CSV.';
+          return;
+        }
+
+        statusEl.textContent = 'Reading file in browser...';
+        const text = await file.text();
+
+        if (!text || text.trim().length === 0) {
+          statusEl.textContent = 'File read returned empty content.';
+          return;
+        }
+
+        statusEl.textContent = 'Writing file into webR virtual filesystem...';
+        // writeFile expects Uint8Array
+        await webR.FS.writeFile('/uploaded.csv', new TextEncoder().encode(text));
+
+        statusEl.textContent = 'Loading CSV in R (read.csv)...';
+        // use read.csv on the virtual file
+        await webR.evalRVoid(`data <- read.csv("/uploaded.csv", stringsAsFactors = FALSE)`);
+
+        // get number of rows
+        const nrowObj = await webR.evalR('nrow(data)');
+        const nrowsArr = await nrowObj.toArray();
+        const nrows = nrowsArr && nrowsArr.length ? nrowsArr[0] : 'unknown';
+
+        statusEl.textContent = `✅ Uploaded. Number of rows: ${nrows}`;
+      } catch (err) {
+        // webR throws objects; coerce to string for display
+        console.error(err);
+        statusEl.textContent = 'Error: ' + (err?.toString ? err.toString() : String(err));
+      }
+    });
+
+    // 2.2 Plot the data
+    window.plotMyData22 = async function() {
+      const graph_title22 = document.getElementById("graph_title22").value || "My Plot";
+
+      const outElem22 = document.getElementById('plot-text22');
+      outElem22.innerText = 'Plotting the graph, please wait ...';
+    
+      await webR.evalRVoid(`
+          library(ggplot2)
+          webr::canvas(width=400, height=300)
+          
+          p1 <- ggplot(data = data, aes(x = Size, y = Width, color = Type)) + 
+            geom_point() + 
+            theme_bw() + 
+            ggtitle(label = as.character(${graph_title22}))
+          
+          print(p1)
+          dev.off()
+      `);
+
+      const outElem23 = document.getElementById('plot-text22');
+      outElem23.innerText = 'Your graph is ready!';
+
+      const msgs = await webR.flush();
+      msgs.forEach(msg => {
+        if (msg.type === 'canvas' && msg.data.event === 'canvasImage') {
+          const canvas = document.getElementById('my_plot_22');
+          canvas.getContext('2d').drawImage(msg.data.image, 0, 0);
+        }
+      });
+    }
+
+    // 2.3 Fitting linear model
+    window.FitLM22 = async function() {
+      const outElem24 = document.getElementById('fit-LM22');
+      outElem24.innerText = 'Fitting the linear model, please wait ...';
+
+      await webR.evalR(`
+          model <- lm(Width ~ Size * Type, data = data)
+      `);
+
+      // regression coefficients
+      const beta022 = await webR.evalR(`coef(model)[1]`);
+      const beta122 = await webR.evalR(`coef(model)[2]`);
+      const beta222 = await webR.evalR(`coef(model)[3]`);
+      const beta322 = await webR.evalR(`coef(model)[4]`);
+      // Convert parameters to array
+      const output_beta022 = (await beta022.toArray())[0];
+      const output_beta122 = (await beta122.toArray())[0];
+      const output_beta222 = (await beta222.toArray())[0];
+      const output_beta322 = (await beta322.toArray())[0];
+      // Specify text for the parameters
+      document.getElementById("output_beta022").textContent = "Intercept: " + output_beta022;
+      document.getElementById("output_beta122").textContent = "Coefficient for Size: " + output_beta122;
+      document.getElementById("output_beta222").textContent = "Coefficient for Type B: " + output_beta222;
+      document.getElementById("output_beta322").textContent = "Interaction coefficient: " + output_beta322;
+
+      const outElem25 = document.getElementById('fit-LM22');
+      outElem25.innerText = 'The model has been fitted!';
+    }
+
+    // 2.4 Plot the fitted lines
+    window.plotFittedCurves22 = async function() {
+      const graph_title222 = document.getElementById("graph_title222").value || "My Plot";
+
+      const outElem26 = document.getElementById('plot-text222');
+      outElem26.innerText = 'Plotting the graph, please wait ...';
+    
+      await webR.evalRVoid(`
+          library(ggplot2)
+          webr::canvas(width=400, height=300)
+          
+          p2 <- ggplot(data = data, aes(x = Size, y = Width, color = Type)) + 
+            geom_point() + 
+            theme_bw() + 
+            geom_smooth(method = "lm", se = FALSE) +
+            ggtitle(label = as.character(${graph_title222}))
+          
+          print(p2)
+          dev.off()
+      `);
+
+      const outElem27 = document.getElementById('plot-text222');
+      outElem27.innerText = 'Your graph is ready!';
+
+      const msgs = await webR.flush();
+      msgs.forEach(msg => {
+        if (msg.type === 'canvas' && msg.data.event === 'canvasImage') {
+          const canvas = document.getElementById('my_plot_222');
+          canvas.getContext('2d').drawImage(msg.data.image, 0, 0);
+        }
+      });
+    }
+
+  </script>
+
+  <!-- 1. Data with specified N -->
+  <h2 id="data">1. Data set with specified sample size <code>N</code></h2>
+  In the first section, we will work with a generated dataset with specified number of rows.
+
+  <!-- 1.1 Generate data -->
+  <h3 id="gen">1.1 Generate the data</h3>
+  <p>Enter a whole number and click <code>Generate the data</code>:</p> 
+  <code>N = </code><input type="number" id="N_data" value="100" min="1" step="1"><br><br>
+  <button onclick="generateData()">Generate the data</button>
+  <p id="output_nrow_data"></p>
+  <p id="output_ncol_data"></p>
+  <p id="output_colnames_data"></p>
+
+  <!-- 1.2 Plot the data -->
+  <h3 id="plot">1.2 Plot the data</h3>
+  We now plot the data. You can select a title for the plot.
+  <p>Enter a title for the graph and click <code>Plot the data</code>:</p>
+  <em>Title for the graph:</em> <input type="text" id="graph_title" value="'Size against width'"><br><br>
+  <button onclick="plotMyData()">Plot the data</button>
+  <div>
+      <pre><code id="plot-text">Press <code>Plot the data</code> button to see the graph ...</code></pre>
+  </div><br><br>
+  <canvas id="my_plot_1" width="1000" height="600"></canvas>
+
+  <!-- 1.3 Fitting linear model -->
+   <h3 id="lm">1.3 Fitting linear model</h3>
+  Now, we fit the linear model with interaction using <code>lm()</code> function.<br><br>
+  <em>Press the button to fit the linear model:</em> <br><br>
+  <button onclick="FitLM()">Fit linear model</button>
+  <div>
+      <pre><code id="fit-LM">Press <code>"Fit linear model"</code> button to fit the model ...</code></pre>
+  </div>
+  <p id="output_beta0"></p>
+  <p id="output_beta1"></p>
+  <p id="output_beta2"></p>
+  <p id="output_beta3"></p>
+
+  <!-- 1.4 Plot the fitted lines -->
+   <h3 id="fitplot">1.4 Plot the fitted lines</h3>
+   Finally, we create a graph of the fitted lines. Again, you can select a title for the graph.<br><br>
+  <em>Title for the graph:</em> <input type="text" id="graph_title2" value="'Fitted lines'"><br><br>
+  <button onclick="plotFittedCurves()">Plot the fitted lines</button>
+  <div>
+      <pre><code id="plot-text2">Press <code>"Plot the fitted lines"</code> button to see the graph ...</code></pre>
+  </div><br>
+  <canvas id="my_plot_2" width="1000" height="600"></canvas>
+
+  <!-- 2. Load data from a file -->
+  <h2 id="datafromfile">2. Load data from a file</h2>
+  In this section, we work with a custom data uploaded in the <code>csv</code> format. After uploading such data, we do the same as before: 
+  <ul>
+    <li>plot the data,</li>
+    <li>fit a linear regression model, and </li>
+    <li>plot the fitted regression lines along with the data points.</li>
+  </ul>
+  
+  <!-- 2.1 Load the data -->
+   <h3 id="loaddata">2.1 Load the data</h3>
+   First, we upload the data from a <em>CSV file</em>. 
+  
+  <p>Select a CSV file:</p>
+  <input type="file" id="csvFile" accept=".csv,text/csv" />
+  <br><br>
+  <button id="uploadBtn">Upload the data</button>
+  <div>
+    <pre><code id="status">File does not uploaded yet.</code></pre>
+  </div><br>
+  
+  <!-- 2.2 Plot the data -->
+  <h3 id="plot2">2.2 Plot the data</h3>
+  We now plot the data. You can select a title for the plot.
+  <p>Enter a title for the graph and click <code>Plot the data</code>:</p>
+  <em>Title for the graph:</em> <input type="text" id="graph_title22" value="'Size against width'"><br><br>
+  <button onclick="plotMyData22()">Plot the data</button>
+  <div>
+      <pre><code id="plot-text22">Press <code>Plot the data</code> button to see the graph ...</code></pre>
+  </div><br><br>
+  <canvas id="my_plot_22" width="1000" height="600"></canvas>
+
+  <!-- 2.3 Fitting linear model -->
+   <h3 id="lm2">2.3 Fitting linear model</h3>
+  Now, we fit the linear model with interaction using <code>lm()</code> function.<br><br>
+  <em>Press the button to fit the linear model:</em> <br><br>
+  <button onclick="FitLM22()">Fit linear model</button>
+  <div>
+      <pre><code id="fit-LM22">Press <code>"Fit linear model"</code> button to fit the model ...</code></pre>
+  </div>
+  <p id="output_beta022"></p>
+  <p id="output_beta122"></p>
+  <p id="output_beta222"></p>
+  <p id="output_beta322"></p>
+
+  <!-- 2.4 Plot the fitted lines -->
+   <h3 id="fitplot2">2.4 Plot the fitted lines</h3>
+   Finally, we create a graph of the fitted lines. Again, you can select a title for the graph.<br><br>
+  <em>Title for the graph:</em> <input type="text" id="graph_title222" value="'Fitted lines'"><br><br>
+  <button onclick="plotFittedCurves22()">Plot the fitted lines</button>
+  <div>
+      <pre><code id="plot-text222">Press <code>"Plot the fitted lines"</code> button to see the graph ...</code></pre>
+  </div><br>
+  <canvas id="my_plot_222" width="1000" height="600"></canvas>
+
+</body>
+</html>
